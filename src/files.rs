@@ -30,6 +30,17 @@ pub fn traverse_directory(path: Option<&Path>) -> Vec<PathBuf> {
     result
 }
 
+pub fn delete_contents_of_directory(path: &str) -> io::Result<()> {
+    // Exclude .history directory
+    let files = traverse_directory(Some(Path::new(path)));
+
+    for file in files {
+        fs::remove_file(file)?;
+    }
+
+    Ok(())
+}
+
 pub fn compare_strings(a: &str, b: &str) -> bool {
     a == b
 }

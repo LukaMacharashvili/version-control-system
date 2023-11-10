@@ -17,6 +17,17 @@ struct CommitMetadata {
     size: i32,
 }
 
+fn check_if_initialized() -> std::io::Result<()> {
+    if !fs::read_dir(".history").is_ok() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Repository not initialized",
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn init() -> std::io::Result<()> {
     let history_path = ".history".to_owned();
     fs::create_dir(history_path)?;
@@ -25,12 +36,7 @@ pub fn init() -> std::io::Result<()> {
 }
 
 pub fn commit(description: &str) -> std::io::Result<()> {
-    if !fs::read_dir(".history").is_ok() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Repository not initialized",
-        ));
-    }
+    check_if_initialized()?;
 
     let history_path = ".history".to_owned();
     let commit_id: String = rand::thread_rng()
@@ -41,8 +47,8 @@ pub fn commit(description: &str) -> std::io::Result<()> {
     let file_paths = traverse_directory(None);
 
     for file_path in file_paths {
-        let file_name = file_path.file_name().unwrap().to_str().unwrap();
-        let last_committed_file_path = history_path.clone() + &"/" + file_name;
+        let file_name_for_history = file_path.clone().to_str().unwrap().replace("/", "_");
+        let last_committed_file_path = history_path.clone() + &"/" + file_name_for_history.as_str();
         let last_committed_file_data_path = last_committed_file_path.clone() + "/data";
         let last_committed_file_metadata_path = last_committed_file_path.clone() + "/metadata.json";
         let file_contents = fs::read_to_string(file_path.clone())?;
@@ -102,6 +108,57 @@ pub fn commit(description: &str) -> std::io::Result<()> {
             let metadata_string = serde_json::to_string(&file_metadata)?;
             metadata_file.write_all(metadata_string.as_bytes())?;
             file.write_all(file_contents.as_bytes())?;
+        }
+    }
+
+    Ok(())
+}
+
+fn find_metadata_by_commit_id(
+    metadata: &Vec<CommitMetadata>,
+    commit_id: &str,
+) -> Option<CommitMetadata> {
+    for commit_metadata in metadata {
+        if commit_metadata.commit_id == commit_id {
+            return Some(commit_metadata.clone());
+        }
+    }
+
+    None
+}
+
+pub fn view(branch_id: &str) -> std::io::Result<()> {
+    check_if_initialized()?;
+    delete_contents_of_directory(".")?;
+    let history_path = ".history".to_owned();
+
+    if let Ok(entries) = fs::read_dir(history_path.clone()) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let entry_path = entry.path();
+                let file_name = entry_path.file_name().unwrap().to_str().unwrap().to_owned();
+                let file_name_for_history = file_name.replace("_", "/");
+                let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
+
+                let file_metadata_string_result =
+                    fs::read_to_string(last_committed_file_path.clone() + "/metadata.json")?;
+                let file_metadata: Vec<CommitMetadata> =
+                    serde_json::from_str(&file_metadata_string_result)?;
+
+                let last_committed_metadata =
+                    find_metadata_by_commit_id(&file_metadata, branch_id).unwrap();
+                let last_committed_file_pointer = last_committed_metadata.pointer_to_data;
+                let last_committed_file_size = last_committed_metadata.size;
+
+                let last_committed_file_contents = read_part_of_file(
+                    &(last_committed_file_path.clone() + "/data"),
+                    last_committed_file_pointer as u64,
+                    last_committed_file_size as usize,
+                )?;
+
+                let mut file = File::create(file_name_for_history)?;
+                file.write_all(last_committed_file_contents.as_bytes())?;
+            }
         }
     }
 

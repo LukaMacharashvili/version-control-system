@@ -11,6 +11,10 @@ fn main() {
             let description = &args[2];
             handlers::commit(description).unwrap();
         }
+        "view" => {
+            let branch_id = &args[2];
+            handlers::view(branch_id).unwrap();
+        }
         _ => println!("Unknown command"),
     }
 }
