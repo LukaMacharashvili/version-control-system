@@ -26,6 +26,7 @@ cargo run --manifest-path path/to/this/project/Cargo.toml view "commit_id"
 
 ## TODO
 - [ ] Add command for listing commits
-- [ ] Branching & Merging
+- [ ] Add .ignore file support
 - [ ] Add ability to view command to go back to latest commit
+- [ ] Branching & Merging
 

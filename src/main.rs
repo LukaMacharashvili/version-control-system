@@ -1,5 +1,5 @@
-pub mod files;
 pub mod handlers;
+pub mod utils;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
