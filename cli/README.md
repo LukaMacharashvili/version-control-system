@@ -5,6 +5,7 @@
 
 ## Build
 ```bash
+cd path/to/this/project
 cargo build
 ```
 
