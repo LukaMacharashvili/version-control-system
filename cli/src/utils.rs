@@ -1,3 +1,5 @@
+use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::Client;
 use chrono::{DateTime, Utc};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -65,6 +67,17 @@ pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
     serde_json::from_str(&file_metadata_string_result).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
+            format!("Failed to parse metadata: {}", e),
+        )
+    })
+}
+
+pub fn load_commits() -> std::io::Result<Vec<Commit>> {
+    let history_path = ".history".to_owned();
+    let commits_string_result = fs::read_to_string(history_path + "/commits.json")?;
+    serde_json::from_str::<Vec<Commit>>(&commits_string_result).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
             format!("Failed to parse metadata: {}", e),
         )
     })
@@ -203,4 +216,42 @@ pub fn find_metadata_by_commit_id(
     }
 
     None
+}
+
+pub async fn get_object(
+    client: &Client,
+    bucket_name: &str,
+    key: &str,
+) -> Result<GetObjectOutput, io::Error> {
+    client
+        .get_object()
+        .bucket(bucket_name)
+        .key(key)
+        .send()
+        .await
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to get object: {}", e),
+            )
+        })
+}
+
+pub async fn create_file_from_s3object(
+    client: &Client,
+    destination: &str,
+    bucket_name: &str,
+    key: &str,
+) -> io::Result<()> {
+    fs::create_dir_all(Path::new(destination).parent().unwrap())?;
+
+    let mut file = File::create(destination)?;
+
+    let mut object = get_object(client, bucket_name, key).await?;
+
+    while let Some(bytes) = object.body.try_next().await? {
+        file.write_all(&bytes)?;
+    }
+
+    Ok(())
 }

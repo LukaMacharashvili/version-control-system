@@ -1,7 +1,10 @@
 use crate::utils::*;
+use aws_sdk_s3 as s3;
+use s3::Client;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 
 pub fn init() -> std::io::Result<()> {
     let history_path = ".history".to_owned();
@@ -90,14 +93,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
 
 pub fn commits() -> std::io::Result<()> {
     check_if_initialized()?;
-    let history_path = ".history".to_owned();
-    let commits_string_result = fs::read_to_string(history_path + "/commits.json")?;
-    let commits = serde_json::from_str::<Vec<Commit>>(&commits_string_result).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Failed to parse metadata: {}", e),
-        )
-    })?;
+    let commits = load_commits()?;
 
     for commit in commits {
         println!(
@@ -109,9 +105,7 @@ pub fn commits() -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn view(branch_id: &str) -> std::io::Result<()> {
-    check_if_initialized()?;
-    delete_contents_of_directory(".")?;
+pub fn load_commit(branch_id: &str) -> std::io::Result<()> {
     let history_path = ".history".to_owned();
 
     if let Ok(entries) = fs::read_dir(history_path.clone()) {
@@ -142,6 +136,7 @@ pub fn view(branch_id: &str) -> std::io::Result<()> {
                     last_committed_file_size as usize,
                 )?;
 
+                fs::create_dir_all(Path::new(&file_name_for_history).parent().unwrap())?;
                 let mut file = File::create(file_name_for_history)?;
                 file.write_all(last_committed_file_contents.as_bytes())?;
             }
@@ -151,12 +146,46 @@ pub fn view(branch_id: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn set_remote(url: &str) -> std::io::Result<()> {
+pub fn view(branch_id: &str) -> std::io::Result<()> {
+    check_if_initialized()?;
+    delete_contents_of_directory(".")?;
+    load_commit(branch_id)?;
+
+    Ok(())
+}
+
+pub fn set_remote(bucket_name: &str) -> std::io::Result<()> {
     if File::open(".history/remote").is_ok() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             "Remote already set",
         ));
     }
-    File::create(".history/remote")?.write_all(url.as_bytes())
+    File::create(".history/remote")?.write_all(bucket_name.as_bytes())
+}
+
+pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
+    let objects = client
+        .list_objects_v2()
+        .bucket(bucket_name)
+        .send()
+        .await
+        .unwrap();
+
+    for obj in objects.contents() {
+        create_file_from_s3object(
+            client,
+            &obj.key().unwrap(),
+            bucket_name,
+            &obj.key().unwrap(),
+        )
+        .await?;
+    }
+
+    let commits = load_commits()?;
+    let last_commit = commits.last().unwrap();
+    let last_commit_id = last_commit.commit_id.clone();
+    load_commit(&last_commit_id)?;
+
+    Ok(())
 }
