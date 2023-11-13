@@ -21,6 +21,15 @@ fn cli() -> Command {
                 .arg(Arg::new("id").help("commit id").required(true).short('i')),
         )
         .subcommand(Command::new("commits").about("Views all the commits"))
+        .subcommand(
+            Command::new("pull").about("Pulls the changes").arg(
+                Arg::new("url")
+                    .required(true)
+                    .short('u')
+                    .help("Repository S3 bucket url"),
+            ),
+        )
+        .subcommand(Command::new("push").about("Syncs the changes"))
 }
 
 fn main() {
@@ -42,6 +51,15 @@ fn main() {
         }
         Some(("commits", _)) => {
             handlers::commits().unwrap();
+        }
+        Some(("pull", sub_matches)) => {
+            let url = sub_matches.get_one::<String>("url");
+            // TODO: Currently it will overwrite the local unpushed commits
+            // TODO: Implement pull
+        }
+        Some(("push", _)) => {
+            // TODO: Currently it will only push if there are no pushed commits in the remote repository that is not in the local repository
+            // TODO: Implement push
         }
         _ => unreachable!(),
     }
