@@ -22,6 +22,16 @@ fn cli() -> Command {
         )
         .subcommand(Command::new("commits").about("Views all the commits"))
         .subcommand(
+            Command::new("set-remote")
+                .about("Sets the remote repository url")
+                .arg(
+                    Arg::new("url")
+                        .required(true)
+                        .short('u')
+                        .help("Repository S3 bucket url"),
+                ),
+        )
+        .subcommand(
             Command::new("pull").about("Pulls the changes").arg(
                 Arg::new("url")
                     .required(true)
@@ -60,6 +70,10 @@ fn main() {
         Some(("push", _)) => {
             // TODO: Currently it will only push if there are no pushed commits in the remote repository that is not in the local repository
             // TODO: Implement push
+        }
+        Some(("set-remote", sub_matches)) => {
+            let url = sub_matches.get_one::<String>("url");
+            handlers::set_remote(url.unwrap_or(&"".to_owned())).unwrap();
         }
         _ => unreachable!(),
     }

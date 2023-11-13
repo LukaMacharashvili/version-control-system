@@ -150,3 +150,13 @@ pub fn view(branch_id: &str) -> std::io::Result<()> {
 
     Ok(())
 }
+
+pub fn set_remote(url: &str) -> std::io::Result<()> {
+    if File::open(".history/remote").is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "Remote already set",
+        ));
+    }
+    File::create(".history/remote")?.write_all(url.as_bytes())
+}
