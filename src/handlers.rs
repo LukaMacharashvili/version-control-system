@@ -12,7 +12,8 @@ pub fn init() -> std::io::Result<()> {
             "Already initialized",
         ));
     }
-    fs::create_dir(history_path)?;
+    fs::create_dir(&history_path)?;
+    File::create(history_path + "/commits.json")?.write_all(b"[]")?;
 
     Ok(())
 }
@@ -23,12 +24,21 @@ pub fn commit(description: &str) -> std::io::Result<()> {
     let history_path = ".history".to_owned();
     let commit_id: String = generate_commit_id();
     let file_paths = traverse_directory(None);
+    let formatted_date = get_current_formatted_date();
+
+    add_commit(
+        &(history_path.clone() + "/commits.json"),
+        Commit {
+            date: formatted_date.clone(),
+            description: description.to_owned(),
+            commit_id: commit_id.clone(),
+        },
+    )?;
 
     for file_path in file_paths {
         let file_name_for_history = file_path.clone().to_str().unwrap().replace("/", "_");
         let last_committed_file_path = history_path.clone() + &"/" + file_name_for_history.as_str();
         let file_contents = fs::read_to_string(file_path.clone())?;
-        let formatted_date = get_current_formatted_date();
 
         let file_metadata_string_result: Result<Vec<CommitMetadata>, std::io::Error> =
             file_metadata(&last_committed_file_path);
@@ -39,7 +49,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
                 write_to_metadata_file(
                     &last_committed_file_path,
                     vec![CommitMetadata {
-                        date: formatted_date,
+                        date: formatted_date.clone(),
                         description: description.to_owned(),
                         commit_id: commit_id.clone(),
                         pointer_to_data: 0,
@@ -63,7 +73,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
 
         if !compare_strings(&last_committed_file_contents, &file_contents) {
             file_metadata.push(CommitMetadata {
-                date: formatted_date,
+                date: formatted_date.clone(),
                 description: description.to_owned(),
                 commit_id: commit_id.clone(),
                 pointer_to_data: last_committed_file_pointer + last_committed_file_size,
@@ -78,6 +88,27 @@ pub fn commit(description: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+pub fn commits() -> std::io::Result<()> {
+    check_if_initialized()?;
+    let history_path = ".history".to_owned();
+    let commits_string_result = fs::read_to_string(history_path + "/commits.json")?;
+    let commits = serde_json::from_str::<Vec<Commit>>(&commits_string_result).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Failed to parse metadata: {}", e),
+        )
+    })?;
+
+    for commit in commits {
+        println!(
+            "{} {} {}",
+            commit.date, commit.commit_id, commit.description
+        );
+    }
+
+    Ok(())
+}
+
 pub fn view(branch_id: &str) -> std::io::Result<()> {
     check_if_initialized()?;
     delete_contents_of_directory(".")?;
@@ -87,13 +118,21 @@ pub fn view(branch_id: &str) -> std::io::Result<()> {
         for entry in entries {
             if let Ok(entry) = entry {
                 let entry_path = entry.path();
+                if entry_path.is_file() {
+                    continue;
+                }
                 let file_name = entry_path.file_name().unwrap().to_str().unwrap().to_owned();
                 let file_name_for_history = file_name.replace("_", "/");
                 let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
 
                 let file_metadata = file_metadata(&last_committed_file_path)?;
-                let target_commit_metadata =
-                    find_metadata_by_commit_id(&file_metadata, branch_id).unwrap();
+                let target_commit_metadata_result =
+                    find_metadata_by_commit_id(&file_metadata, branch_id);
+                let target_commit_metadata = match target_commit_metadata_result {
+                    None => file_metadata.last().unwrap().clone(),
+                    _ => target_commit_metadata_result.unwrap(),
+                };
+
                 let last_committed_file_pointer = target_commit_metadata.pointer_to_data;
                 let last_committed_file_size = target_commit_metadata.size;
 

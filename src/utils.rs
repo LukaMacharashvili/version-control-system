@@ -17,6 +17,13 @@ pub struct CommitMetadata {
     pub size: i32,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Commit {
+    pub date: String,
+    pub description: String,
+    pub commit_id: String,
+}
+
 pub fn check_if_initialized() -> std::io::Result<()> {
     if !fs::read_dir(".history").is_ok() {
         return Err(io::Error::new(
@@ -26,6 +33,41 @@ pub fn check_if_initialized() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+pub fn add_commit(path: &str, commit: Commit) -> std::io::Result<()> {
+    let commit_string = fs::read_to_string(path)?;
+    let mut commits = serde_json::from_str::<Vec<Commit>>(&commit_string).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse metadata: {}", e),
+        )
+    })?;
+
+    commits.push(commit);
+
+    File::create(path)?.write_all(
+        serde_json::to_string(&commits)
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to parse metadata: {}", e),
+                )
+            })?
+            .as_bytes(),
+    )?;
+
+    Ok(())
+}
+
+pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
+    let file_metadata_string_result = fs::read_to_string(path.to_owned() + "/metadata.json")?;
+    serde_json::from_str(&file_metadata_string_result).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse metadata: {}", e),
+        )
+    })
 }
 
 pub fn write_to_metadata_file(path: &str, metadata: Vec<CommitMetadata>) -> std::io::Result<()> {
@@ -49,16 +91,6 @@ pub fn write_to_data_file(path: &str, data: &str, exists: bool) -> std::io::Resu
     }
 }
 
-pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
-    let file_metadata_string_result = fs::read_to_string(path.to_owned() + "/metadata.json")?;
-    serde_json::from_str(&file_metadata_string_result).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse metadata: {}", e),
-        )
-    })
-}
-
 pub fn generate_commit_id() -> String {
     rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -72,17 +104,44 @@ pub fn get_current_formatted_date() -> String {
     now.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+pub fn load_ignore_file() -> Vec<String> {
+    let mut ignore_file = match File::open(".ignore") {
+        Ok(file) => file,
+        Err(_) => return Vec::new(),
+    };
+    let mut ignore_file_contents = String::new();
+    ignore_file
+        .read_to_string(&mut ignore_file_contents)
+        .unwrap();
+    let ignore_file_lines: Vec<&str> = ignore_file_contents.split("\n").collect();
+    let mut ignore_file_lines_without_comments = Vec::new();
+
+    for line in ignore_file_lines {
+        if line.starts_with("#") || line.is_empty() {
+            continue;
+        }
+        ignore_file_lines_without_comments.push(line.to_owned());
+    }
+
+    ignore_file_lines_without_comments
+}
+
 pub fn traverse_directory(path: Option<&Path>) -> Vec<PathBuf> {
     let path = match path {
         Some(path) => path,
         None => Path::new("."),
     };
     let mut result = Vec::new();
+    let files_to_ignore = load_ignore_file();
 
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries {
             if let Ok(entry) = entry {
                 let entry_path = entry.path();
+                let entry_name = entry_path.file_name().unwrap().to_str().unwrap();
+                if files_to_ignore.contains(&entry_name.to_owned()) {
+                    continue;
+                }
                 if entry_path.is_file() {
                     result.push(entry_path.clone());
                 } else if entry_path.is_dir() {
@@ -101,9 +160,18 @@ pub fn traverse_directory(path: Option<&Path>) -> Vec<PathBuf> {
 
 pub fn delete_contents_of_directory(path: &str) -> io::Result<()> {
     let files = traverse_directory(Some(Path::new(path)));
+    let files_to_ignore = load_ignore_file();
 
-    for file in files {
-        fs::remove_file(file)?;
+    for entry_path in files {
+        let entry_name = entry_path.file_name().unwrap().to_str().unwrap();
+        if files_to_ignore.contains(&entry_name.to_owned()) {
+            continue;
+        }
+        if entry_path.is_file() {
+            fs::remove_file(entry_path)?;
+        } else if entry_path.is_dir() {
+            fs::remove_dir_all(entry_path)?;
+        }
     }
 
     Ok(())
