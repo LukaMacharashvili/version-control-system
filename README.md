@@ -25,6 +25,7 @@ cargo run --manifest-path path/to/this/project/Cargo.toml view "commit_id"
 ```
 
 ## TODO
+- [ ] Add support for remote repositories with AWS S3
 - [ ] Add command for listing commits
 - [ ] Add .ignore file support
 - [ ] Add ability to view command to go back to latest commit

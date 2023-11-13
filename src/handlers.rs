@@ -5,6 +5,13 @@ use std::io::Write;
 
 pub fn init() -> std::io::Result<()> {
     let history_path = ".history".to_owned();
+    let git_path = ".git".to_owned();
+    if fs::read_dir(git_path.clone()).is_ok() || fs::read_dir(history_path.clone()).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "Already initialized",
+        ));
+    }
     fs::create_dir(history_path)?;
 
     Ok(())
