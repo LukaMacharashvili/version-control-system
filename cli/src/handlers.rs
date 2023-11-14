@@ -1,10 +1,13 @@
-use crate::utils::*;
 use aws_sdk_s3 as s3;
 use s3::Client;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+
+use crate::utils::dates::get_current_formatted_date;
+use crate::utils::fs_provider::*;
+use crate::utils::s3_provider::*;
+use crate::utils::*;
 
 pub fn init() -> std::io::Result<()> {
     let history_path = ".history".to_owned();
@@ -26,7 +29,8 @@ pub fn commit(description: &str) -> std::io::Result<()> {
 
     let history_path = ".history".to_owned();
     let commit_id: String = generate_commit_id();
-    let file_paths = traverse_directory(None);
+    let ignores = load_ignores();
+    let file_paths = traverse_directory(None, Some(&ignores));
     let formatted_date = get_current_formatted_date();
 
     add_commit(
@@ -74,7 +78,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
             last_committed_file_size as usize,
         )?;
 
-        if !compare_strings(&last_committed_file_contents, &file_contents) {
+        if &last_committed_file_contents == &file_contents {
             file_metadata.push(CommitMetadata {
                 date: formatted_date.clone(),
                 description: description.to_owned(),
@@ -105,50 +109,10 @@ pub fn commits() -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn load_commit(branch_id: &str) -> std::io::Result<()> {
-    let history_path = ".history".to_owned();
-
-    if let Ok(entries) = fs::read_dir(history_path.clone()) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let entry_path = entry.path();
-                if entry_path.is_file() {
-                    continue;
-                }
-                let file_name = entry_path.file_name().unwrap().to_str().unwrap().to_owned();
-                let file_name_for_history = file_name.replace("_", "/");
-                let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
-
-                let file_metadata = file_metadata(&last_committed_file_path)?;
-                let target_commit_metadata_result =
-                    find_metadata_by_commit_id(&file_metadata, branch_id);
-                let target_commit_metadata = match target_commit_metadata_result {
-                    None => file_metadata.last().unwrap().clone(),
-                    _ => target_commit_metadata_result.unwrap(),
-                };
-
-                let last_committed_file_pointer = target_commit_metadata.pointer_to_data;
-                let last_committed_file_size = target_commit_metadata.size;
-
-                let last_committed_file_contents = read_part_of_file(
-                    &(last_committed_file_path.clone() + "/data.bin"),
-                    last_committed_file_pointer as u64,
-                    last_committed_file_size as usize,
-                )?;
-
-                fs::create_dir_all(Path::new(&file_name_for_history).parent().unwrap())?;
-                let mut file = File::create(file_name_for_history)?;
-                file.write_all(last_committed_file_contents.as_bytes())?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
 pub fn view(branch_id: &str) -> std::io::Result<()> {
     check_if_initialized()?;
-    delete_contents_of_directory(".")?;
+    let ignores = load_ignores();
+    delete_contents_of_directory(".", Some(&ignores))?;
     load_commit(branch_id)?;
 
     Ok(())
@@ -192,7 +156,8 @@ pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
 
 pub async fn pull(client: &Client) -> std::io::Result<()> {
     let bucket_name = fs::read_to_string(".history/remote")?;
-    delete_contents_of_directory(".")?;
+    let ignores = load_ignores();
+    delete_contents_of_directory(".", Some(&ignores))?;
     clone(client, &bucket_name).await?;
 
     Ok(())
