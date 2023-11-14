@@ -204,7 +204,7 @@ pub async fn push(client: &Client) -> std::io::Result<()> {
         client,
         ".history/temp-commits.json",
         &bucket_name,
-        "commits.json",
+        ".history/commits.json",
     )
     .await?;
 

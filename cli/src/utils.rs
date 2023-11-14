@@ -1,5 +1,6 @@
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{Delete, ObjectIdentifier};
 use aws_sdk_s3::Client;
 use chrono::{DateTime, Utc};
 use rand::distributions::Alphanumeric;
@@ -273,9 +274,31 @@ pub async fn sync_local_history_with_s3(
     bucket_name: &str,
     local_path: &str,
 ) -> io::Result<()> {
+    let objects = client
+        .list_objects_v2()
+        .bucket(bucket_name)
+        .send()
+        .await
+        .unwrap();
+
+    let mut delete_objects: Vec<ObjectIdentifier> = vec![];
+    for obj in objects.contents() {
+        let obj_id = ObjectIdentifier::builder()
+            .set_key(Some(obj.key().unwrap().to_string()))
+            .build()
+            .unwrap();
+        delete_objects.push(obj_id);
+    }
+
     client
         .delete_objects()
         .bucket(bucket_name)
+        .delete(
+            Delete::builder()
+                .set_objects(Some(delete_objects))
+                .build()
+                .unwrap(),
+        )
         .send()
         .await
         .unwrap();
@@ -289,7 +312,7 @@ pub async fn sync_local_history_with_s3(
         client
             .put_object()
             .bucket(bucket_name)
-            .key(path.to_str().unwrap())
+            .key(".history/".to_owned() + path.to_str().unwrap())
             .body(body)
             .send()
             .await
