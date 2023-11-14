@@ -77,11 +77,11 @@ async fn main() {
         }
         Some(("pull", _)) => {
             // TODO: Currently it will overwrite the local unpushed commits
-            // TODO: Implement push
+            handlers::pull(&client).await.unwrap();
         }
         Some(("push", _)) => {
             // TODO: Currently it will only push if there are no pushed commits in the remote repository that is not in the local repository
-            // TODO: Implement push
+            handlers::push(&client).await.unwrap();
         }
         Some(("set-remote", sub_matches)) => {
             let bucket_name = sub_matches.get_one::<String>("bucket");

@@ -93,7 +93,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
 
 pub fn commits() -> std::io::Result<()> {
     check_if_initialized()?;
-    let commits = load_commits()?;
+    let commits = load_commits("/commits.json")?;
 
     for commit in commits {
         println!(
@@ -182,10 +182,54 @@ pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
         .await?;
     }
 
-    let commits = load_commits()?;
+    let commits = load_commits("/commits.json")?;
     let last_commit = commits.last().unwrap();
     let last_commit_id = last_commit.commit_id.clone();
     load_commit(&last_commit_id)?;
+
+    Ok(())
+}
+
+pub async fn pull(client: &Client) -> std::io::Result<()> {
+    let bucket_name = fs::read_to_string(".history/remote")?;
+    delete_contents_of_directory(".")?;
+    clone(client, &bucket_name).await?;
+
+    Ok(())
+}
+
+pub async fn push(client: &Client) -> std::io::Result<()> {
+    let bucket_name = fs::read_to_string(".history/remote")?;
+    create_file_from_s3object(
+        client,
+        ".history/temp-commits.json",
+        &bucket_name,
+        "commits.json",
+    )
+    .await?;
+
+    let remote_commits = load_commits("/temp-commits.json")?;
+    let local_commits = load_commits("/commits.json")?;
+
+    let last_remote_commit = remote_commits.last().unwrap();
+    let last_remote_commit_id = last_remote_commit.commit_id.clone();
+
+    let found_commit = find_commit_by_commit_id(&local_commits, &last_remote_commit_id);
+    if found_commit.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Remote history is ahead of local history, pull the changes first",
+        ));
+    }
+
+    if remote_commits.len() >= local_commits.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Nothing to push",
+        ));
+    }
+
+    sync_local_history_with_s3(client, &bucket_name, ".history").await?;
 
     Ok(())
 }

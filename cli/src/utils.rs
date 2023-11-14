@@ -1,4 +1,5 @@
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use chrono::{DateTime, Utc};
 use rand::distributions::Alphanumeric;
@@ -72,9 +73,9 @@ pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
     })
 }
 
-pub fn load_commits() -> std::io::Result<Vec<Commit>> {
+pub fn load_commits(path: &str) -> std::io::Result<Vec<Commit>> {
     let history_path = ".history".to_owned();
-    let commits_string_result = fs::read_to_string(history_path + "/commits.json")?;
+    let commits_string_result = fs::read_to_string(history_path + path)?;
     serde_json::from_str::<Vec<Commit>>(&commits_string_result).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -218,6 +219,17 @@ pub fn find_metadata_by_commit_id(
     None
 }
 
+// TODO: Make generic
+pub fn find_commit_by_commit_id(metadata: &Vec<Commit>, commit_id: &str) -> Option<Commit> {
+    for commit_metadata in metadata {
+        if commit_metadata.commit_id == commit_id {
+            return Some(commit_metadata.clone());
+        }
+    }
+
+    None
+}
+
 pub async fn get_object(
     client: &Client,
     bucket_name: &str,
@@ -251,6 +263,37 @@ pub async fn create_file_from_s3object(
 
     while let Some(bytes) = object.body.try_next().await? {
         file.write_all(&bytes)?;
+    }
+
+    Ok(())
+}
+
+pub async fn sync_local_history_with_s3(
+    client: &Client,
+    bucket_name: &str,
+    local_path: &str,
+) -> io::Result<()> {
+    client
+        .delete_objects()
+        .bucket(bucket_name)
+        .send()
+        .await
+        .unwrap();
+
+    let files = traverse_directory(Some(Path::new(local_path)));
+
+    for file in files {
+        let body = ByteStream::from_path(&file).await.unwrap();
+        let path = file.strip_prefix(".history/").unwrap();
+
+        client
+            .put_object()
+            .bucket(bucket_name)
+            .key(path.to_str().unwrap())
+            .body(body)
+            .send()
+            .await
+            .unwrap();
     }
 
     Ok(())
