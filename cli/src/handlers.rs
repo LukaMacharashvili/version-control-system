@@ -210,6 +210,7 @@ pub async fn push(client: &Client) -> std::io::Result<()> {
 
     let remote_commits = load_commits("/temp-commits.json")?;
     let local_commits = load_commits("/commits.json")?;
+    fs::remove_file(".history/temp-commits.json")?;
 
     let last_remote_commit = remote_commits.last().unwrap();
     let last_remote_commit_id = last_remote_commit.commit_id.clone();
