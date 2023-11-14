@@ -71,7 +71,6 @@ async fn main() {
         }
         Some(("clone", sub_matches)) => {
             let bucket_name = sub_matches.get_one::<String>("bucket");
-            // TODO: Currently it will overwrite the local unpushed commits
             handlers::clone(&client, bucket_name.unwrap_or(&"".to_owned()))
                 .await
                 .unwrap();
