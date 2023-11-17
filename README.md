@@ -26,9 +26,10 @@ cargo run --manifest-path path/to/this/project/Cargo.toml view "commit_id"
 ```
 
 ## TODO
-- [x] Add support for remote repositories with AWS S3
 - [ ] Add API
+- [ ] Add WASM support for browser (Github-like UI)
+- [ ] Branching & Merging
+- [x] Add support for remote repositories with AWS S3
 - [x] Add command for listing commits
 - [x] Add .ignore file support
-- [ ] Branching & Merging
 
