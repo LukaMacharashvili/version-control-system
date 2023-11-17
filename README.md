@@ -17,7 +17,7 @@ cargo run --manifest-path path/to/this/project/Cargo.toml help
 ```bash
 A simple version control system written in Rust
 
-Usage: vms-cli <COMMAND>
+Usage: cargo run --manifest-path path/to/this/project/Cargo.toml <command> [options]
 
 Commands:
   init        Initializes a new repository
