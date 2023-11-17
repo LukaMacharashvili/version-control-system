@@ -10,6 +10,7 @@ use std::fs::File;
 use std::fs::{self};
 use std::io::{self, Read, Write};
 use std::path::Path;
+use std::thread;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CommitMetadata {
@@ -96,37 +97,51 @@ pub fn load_commit(branch_id: &str) -> std::io::Result<()> {
     let history_path = ".history".to_owned();
 
     if let Ok(entries) = fs::read_dir(history_path.clone()) {
+        let mut join_handles = Vec::new();
         for entry in entries {
-            if let Ok(entry) = entry {
-                let entry_path = entry.path();
-                if entry_path.is_file() {
-                    continue;
+            let branch_id = branch_id.to_owned();
+            let history_path = history_path.clone();
+            let handle = thread::spawn(move || {
+                if let Ok(entry) = entry {
+                    let entry_path = entry.path();
+                    if entry_path.is_file() {
+                        return;
+                    }
+                    let file_name = entry_path.file_name().unwrap().to_str().unwrap().to_owned();
+                    let file_name_for_history = file_name.replace("_", "/");
+                    let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
+
+                    let file_metadata = file_metadata(&last_committed_file_path).unwrap();
+                    let target_commit_metadata_result =
+                        find_metadata_by_commit_id(&file_metadata, &branch_id);
+                    let target_commit_metadata = match target_commit_metadata_result {
+                        None => file_metadata.last().unwrap().clone(),
+                        _ => target_commit_metadata_result.unwrap(),
+                    };
+
+                    let last_committed_file_pointer = target_commit_metadata.pointer_to_data;
+                    let last_committed_file_size = target_commit_metadata.size;
+
+                    let last_committed_file_contents = read_part_of_file(
+                        &(last_committed_file_path.clone() + "/data.bin"),
+                        last_committed_file_pointer as u64,
+                        last_committed_file_size as usize,
+                    )
+                    .unwrap();
+
+                    fs::create_dir_all(Path::new(&file_name_for_history).parent().unwrap())
+                        .unwrap();
+                    let mut file = File::create(file_name_for_history).unwrap();
+                    file.write_all(last_committed_file_contents.as_bytes())
+                        .unwrap();
                 }
-                let file_name = entry_path.file_name().unwrap().to_str().unwrap().to_owned();
-                let file_name_for_history = file_name.replace("_", "/");
-                let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
+            });
 
-                let file_metadata = file_metadata(&last_committed_file_path)?;
-                let target_commit_metadata_result =
-                    find_metadata_by_commit_id(&file_metadata, branch_id);
-                let target_commit_metadata = match target_commit_metadata_result {
-                    None => file_metadata.last().unwrap().clone(),
-                    _ => target_commit_metadata_result.unwrap(),
-                };
+            join_handles.push(handle);
+        }
 
-                let last_committed_file_pointer = target_commit_metadata.pointer_to_data;
-                let last_committed_file_size = target_commit_metadata.size;
-
-                let last_committed_file_contents = read_part_of_file(
-                    &(last_committed_file_path.clone() + "/data.bin"),
-                    last_committed_file_pointer as u64,
-                    last_committed_file_size as usize,
-                )?;
-
-                fs::create_dir_all(Path::new(&file_name_for_history).parent().unwrap())?;
-                let mut file = File::create(file_name_for_history)?;
-                file.write_all(last_committed_file_contents.as_bytes())?;
-            }
+        for handle in join_handles {
+            handle.join().unwrap();
         }
     }
 
@@ -146,7 +161,6 @@ pub fn find_metadata_by_commit_id(
     None
 }
 
-// TODO: Make generic
 pub fn find_commit_by_commit_id(metadata: &Vec<Commit>, commit_id: &str) -> Option<Commit> {
     for commit_metadata in metadata {
         if commit_metadata.commit_id == commit_id {
