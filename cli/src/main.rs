@@ -42,7 +42,7 @@ fn cli() -> Command {
                 ),
         )
         .subcommand(Command::new("pull").about("Pulls the changes"))
-        .subcommand(Command::new("push").about("Syncs the changes"))
+        .subcommand(Command::new("push").about("Syncs the changes to the remote repository"))
 }
 
 #[::tokio::main]

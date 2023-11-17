@@ -9,20 +9,26 @@ cd path/to/this/project
 cargo build
 ```
 
-## Initialize a repository
+## Run help command for information on how to use the CLI
 ```bash
 cd path/to/your/project
-cargo run --manifest-path path/to/this/project/Cargo.toml init
+cargo run --manifest-path path/to/this/project/Cargo.toml help
 ```
-
-## Commit
 ```bash
-cargo run --manifest-path path/to/this/project/Cargo.toml commit "Your commit message"
-```
+A simple version control system written in Rust
 
-## View previous commits
-```bash
-cargo run --manifest-path path/to/this/project/Cargo.toml view "commit_id"
+Usage: vms-cli <COMMAND>
+
+Commands:
+  init        Initializes a new repository
+  commit      Commits the changes
+  view        Views the commit
+  commits     Views all the commits
+  clone       Clones the remote repository
+  set-remote  Sets the remote repository bucket
+  pull        Pulls the changes
+  push        Syncs the changes to the remote repository
+  help        Print this message or the help of the given subcommand(s)
 ```
 
 ## TODO
