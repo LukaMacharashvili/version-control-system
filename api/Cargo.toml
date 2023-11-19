@@ -6,3 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-web = "4.4.0"
+chrono = { version = "0.4.31", features = ["serde"] }
+serde = { version = "1.0.192", features = ["derive"] }
+aws-config = { version = "0.101.0", features = ["behavior-version-latest"] }
+aws-sdk-cognitoidentityprovider = "0.38.0"

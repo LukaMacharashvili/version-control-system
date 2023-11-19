@@ -1,3 +1,6 @@
+mod controllers;
+mod models;
+
 fn main() {
     // User Table
     // (unique) | (unique) | (unique) | Date | Date
