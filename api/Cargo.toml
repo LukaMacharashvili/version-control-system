@@ -11,3 +11,6 @@ chrono = { version = "0.4.31", features = ["serde"] }
 serde = { version = "1.0.192", features = ["derive"] }
 aws-config = { version = "0.101.0", features = ["behavior-version-latest"] }
 aws-sdk-cognitoidentityprovider = "0.38.0"
+mysql = "*"
+futures = "0.3.17"
+jsonwebtokens-cognito = "0.1.0"
