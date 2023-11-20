@@ -32,7 +32,7 @@ Commands:
 ```
 
 ## TODO
-- [ ] Add API
+- [x] Add API
 - [ ] Add WASM support for browser (Github-like UI)
 - [ ] Branching & Merging
 - [x] Add support for remote repositories with AWS S3
