@@ -37,10 +37,12 @@ pub fn generate_commit_id() -> String {
 }
 
 pub fn check_if_initialized() -> std::io::Result<()> {
-    if !fs::read_dir(".history").is_ok() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Repository not initialized",
+    let history_path = ".history".to_owned();
+    let git_path = ".git".to_owned();
+    if fs::read_dir(git_path.clone()).is_ok() || fs::read_dir(history_path.clone()).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "Already initialized",
         ));
     }
 
