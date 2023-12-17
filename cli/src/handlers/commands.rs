@@ -4,17 +4,21 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 
+use crate::utils::constants::{
+    MAIN_COMMITS_METADATA_FILE_PATH, REMOTE_REPOSITORY_REFERENCE_FILE_PATH, VSM_DIR,
+};
 use crate::utils::dates::get_current_formatted_date;
 use crate::utils::fs_provider::*;
 use crate::utils::s3_provider::*;
+use crate::utils::types::Commit;
+use crate::utils::types::CommitMetadata;
 use crate::utils::*;
 
 pub fn init() -> std::io::Result<()> {
-    let history_path = ".history".to_owned();
     check_if_initialized()?;
 
-    fs::create_dir(&history_path)?;
-    File::create(history_path + "/commits.json")?.write_all(b"[]")?;
+    fs::create_dir(VSM_DIR)?;
+    File::create(MAIN_COMMITS_METADATA_FILE_PATH)?.write_all(b"[]")?;
 
     Ok(())
 }
@@ -22,33 +26,29 @@ pub fn init() -> std::io::Result<()> {
 pub fn commit(description: &str) -> std::io::Result<()> {
     check_if_initialized()?;
 
-    let history_path = ".history".to_owned();
     let commit_id: String = generate_commit_id();
-    let ignores = load_ignores();
-    let file_paths = traverse_directory(None, Some(&ignores));
+    let files_to_ignore = list_files_ignore();
+    let file_paths = get_file_paths_recursively(None, Some(&files_to_ignore));
     let formatted_date = get_current_formatted_date();
 
-    add_commit(
-        &(history_path.clone() + "/commits.json"),
-        Commit {
-            date: formatted_date.clone(),
-            description: description.to_owned(),
-            commit_id: commit_id.clone(),
-        },
-    )?;
+    add_root_commit_metadata(Commit {
+        date: formatted_date.clone(),
+        description: description.to_owned(),
+        commit_id: commit_id.clone(),
+    })?;
 
     for file_path in file_paths {
         let file_name_for_history = file_path.clone().to_str().unwrap().replace("/", "_");
-        let last_committed_file_path = history_path.clone() + &"/" + file_name_for_history.as_str();
+        let last_committed_file_path = VSM_DIR.to_owned() + "/" + file_name_for_history.as_str();
         let file_contents = fs::read_to_string(file_path.clone())?;
 
         let file_metadata_string_result: Result<Vec<CommitMetadata>, std::io::Error> =
-            file_metadata(&last_committed_file_path);
-        let mut file_metadata = match file_metadata_string_result {
+            commits_metadata(&last_committed_file_path);
+        let mut commits_metadata = match file_metadata_string_result {
             Ok(res) => res,
             Err(_) => {
                 fs::create_dir(&last_committed_file_path)?;
-                write_to_metadata_file(
+                write_to_commit_metadata_file(
                     &last_committed_file_path,
                     vec![CommitMetadata {
                         date: formatted_date.clone(),
@@ -63,7 +63,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
                 continue;
             }
         };
-        let last_committed_metadata = file_metadata.last().unwrap();
+        let last_committed_metadata = commits_metadata.last().unwrap();
         let last_committed_file_pointer = last_committed_metadata.pointer_to_data;
         let last_committed_file_size = last_committed_metadata.size;
 
@@ -74,7 +74,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
         )?;
 
         if &last_committed_file_contents == &file_contents {
-            file_metadata.push(CommitMetadata {
+            commits_metadata.push(CommitMetadata {
                 date: formatted_date.clone(),
                 description: description.to_owned(),
                 commit_id: commit_id.clone(),
@@ -82,7 +82,7 @@ pub fn commit(description: &str) -> std::io::Result<()> {
                 size: file_contents.len() as i32,
             });
 
-            write_to_metadata_file(&last_committed_file_path, file_metadata)?;
+            write_to_commit_metadata_file(&last_committed_file_path, commits_metadata)?;
             write_to_data_file(&last_committed_file_path, &file_contents, true)?;
         }
     }
@@ -90,37 +90,24 @@ pub fn commit(description: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn commits() -> std::io::Result<()> {
-    check_if_initialized()?;
-    let commits = load_commits("/commits.json")?;
-
-    for commit in commits {
-        println!(
-            "{} {} {}",
-            commit.date, commit.commit_id, commit.description
-        );
-    }
-
-    Ok(())
-}
-
 pub fn view(branch_id: &str) -> std::io::Result<()> {
     check_if_initialized()?;
-    let ignores = load_ignores();
-    delete_contents_of_directory(".", Some(&ignores))?;
+
+    let files_to_ignore = list_files_ignore();
+    delete_contents_of_directory(".", Some(&files_to_ignore))?;
     load_commit(branch_id)?;
 
     Ok(())
 }
 
 pub fn set_remote(bucket_name: &str) -> std::io::Result<()> {
-    if File::open(".history/remote").is_ok() {
+    if File::open(REMOTE_REPOSITORY_REFERENCE_FILE_PATH).is_ok() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             "Remote already set",
         ));
     }
-    File::create(".history/remote")?.write_all(bucket_name.as_bytes())
+    File::create(REMOTE_REPOSITORY_REFERENCE_FILE_PATH)?.write_all(bucket_name.as_bytes())
 }
 
 pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
@@ -141,7 +128,7 @@ pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
         .await?;
     }
 
-    let commits = load_commits("/commits.json")?;
+    let commits = list_commits(MAIN_COMMITS_METADATA_FILE_PATH)?;
     let last_commit = commits.last().unwrap();
     let last_commit_id = last_commit.commit_id.clone();
     load_commit(&last_commit_id)?;
@@ -150,27 +137,27 @@ pub async fn clone(client: &Client, bucket_name: &str) -> std::io::Result<()> {
 }
 
 pub async fn pull(client: &Client) -> std::io::Result<()> {
-    let bucket_name = fs::read_to_string(".history/remote")?;
-    let ignores = load_ignores();
-    delete_contents_of_directory(".", Some(&ignores))?;
+    let bucket_name = fs::read_to_string(REMOTE_REPOSITORY_REFERENCE_FILE_PATH)?;
+    let files_to_ignore = list_files_ignore();
+    delete_contents_of_directory(".", Some(&files_to_ignore))?;
     clone(client, &bucket_name).await?;
 
     Ok(())
 }
 
 pub async fn push(client: &Client) -> std::io::Result<()> {
-    let bucket_name = fs::read_to_string(".history/remote")?;
+    let bucket_name = fs::read_to_string(REMOTE_REPOSITORY_REFERENCE_FILE_PATH)?;
     create_file_from_s3object(
         client,
-        ".history/temp-commits.json",
+        &(MAIN_COMMITS_METADATA_FILE_PATH.to_owned() + "-temp"),
         &bucket_name,
-        ".history/commits.json",
+        MAIN_COMMITS_METADATA_FILE_PATH,
     )
     .await?;
 
-    let remote_commits = load_commits("/temp-commits.json")?;
-    let local_commits = load_commits("/commits.json")?;
-    fs::remove_file(".history/temp-commits.json")?;
+    let remote_commits = list_commits(&(MAIN_COMMITS_METADATA_FILE_PATH.to_owned() + "-temp"))?;
+    let local_commits = list_commits(MAIN_COMMITS_METADATA_FILE_PATH)?;
+    fs::remove_file(MAIN_COMMITS_METADATA_FILE_PATH.to_owned() + "-temp")?;
 
     let last_remote_commit = remote_commits.last().unwrap();
     let last_remote_commit_id = last_remote_commit.commit_id.clone();
@@ -190,7 +177,7 @@ pub async fn push(client: &Client) -> std::io::Result<()> {
         ));
     }
 
-    sync_local_history_with_s3(client, &bucket_name, ".history").await?;
+    sync_local_history_with_s3(client, &bucket_name, VSM_DIR).await?;
 
     Ok(())
 }

@@ -8,7 +8,7 @@ use aws_sdk_s3::types::{Delete, ObjectIdentifier};
 use s3::operation::get_object::GetObjectOutput;
 use s3::Client;
 
-use super::traverse_directory;
+use super::get_file_paths_recursively;
 
 pub async fn clear_bucket(client: &Client, bucket_name: &str) -> io::Result<()> {
     let objects = client
@@ -50,7 +50,7 @@ pub async fn sync_local_history_with_s3(
 ) -> io::Result<()> {
     clear_bucket(client, bucket_name).await.unwrap();
 
-    let files = traverse_directory(Some(Path::new(local_path)), None);
+    let files = get_file_paths_recursively(Some(Path::new(local_path)), None);
 
     for file in files {
         let body = ByteStream::from_path(&file).await.unwrap();

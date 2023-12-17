@@ -7,7 +7,7 @@ use std::io::{Result, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use super::load_ignores;
+use super::list_files_ignore;
 
 pub fn write_to_data_file(path: &str, data: &str, exists: bool) -> Result<()> {
     if exists {
@@ -34,7 +34,10 @@ pub fn read_part_of_file(file_path: &str, start: u64, length: usize) -> Result<S
     Ok(contents)
 }
 
-pub fn traverse_directory(path: Option<&Path>, ignores: Option<&Vec<String>>) -> Vec<PathBuf> {
+pub fn get_file_paths_recursively(
+    path: Option<&Path>,
+    ignores: Option<&Vec<String>>,
+) -> Vec<PathBuf> {
     let path = match path {
         Some(path) => path,
         None => Path::new("."),
@@ -60,7 +63,8 @@ pub fn traverse_directory(path: Option<&Path>, ignores: Option<&Vec<String>>) ->
                     if entry_path.file_name().unwrap().to_str().unwrap() == ".history" {
                         continue;
                     }
-                    let subdirectory_files = traverse_directory(Some(&entry_path), Some(ignores));
+                    let subdirectory_files =
+                        get_file_paths_recursively(Some(&entry_path), Some(ignores));
                     result.extend(subdirectory_files);
                 }
             }
@@ -76,8 +80,8 @@ pub fn delete_contents_of_directory(path: &str, ignores: Option<&Vec<String>>) -
         Some(ignores) => ignores,
         None => &binding_ignores,
     };
-    let files = traverse_directory(Some(Path::new(path)), Some(ignores));
-    let files_to_ignore = load_ignores();
+    let files = get_file_paths_recursively(Some(Path::new(path)), Some(ignores));
+    let files_to_ignore = list_files_ignore();
     let mut join_handles = Vec::new();
 
     for entry_path in files {

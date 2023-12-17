@@ -55,37 +55,37 @@ async fn main() {
     match matches.subcommand() {
         Some(("init", _)) => {
             println!("Initializing a new repository");
-            handlers::init().unwrap();
+            handlers::commands::init().unwrap();
         }
         Some(("commit", sub_matches)) => {
             let description = sub_matches.get_one::<String>("description");
             println!("Committing the changes");
-            handlers::commit(description.unwrap_or(&"".to_owned())).unwrap();
+            handlers::commands::commit(description.unwrap_or(&"".to_owned())).unwrap();
         }
         Some(("view", sub_matches)) => {
             let id = sub_matches.get_one::<String>("id");
-            handlers::view(&id.unwrap_or(&"".to_owned())).unwrap();
+            handlers::commands::view(&id.unwrap_or(&"".to_owned())).unwrap();
         }
-        Some(("commits", _)) => {
-            handlers::commits().unwrap();
+        Some(("log-commits", _)) => {
+            handlers::queries::log_commits().unwrap();
         }
         Some(("clone", sub_matches)) => {
             let bucket_name = sub_matches.get_one::<String>("bucket");
-            handlers::clone(&client, bucket_name.unwrap_or(&"".to_owned()))
+            handlers::commands::clone(&client, bucket_name.unwrap_or(&"".to_owned()))
                 .await
                 .unwrap();
         }
         Some(("pull", _)) => {
             // TODO: Currently it will overwrite the local unpushed commits
-            handlers::pull(&client).await.unwrap();
+            handlers::commands::pull(&client).await.unwrap();
         }
         Some(("push", _)) => {
             // TODO: Currently it will only push if there are no pushed commits in the remote repository that is not in the local repository
-            handlers::push(&client).await.unwrap();
+            handlers::commands::push(&client).await.unwrap();
         }
         Some(("set-remote", sub_matches)) => {
             let bucket_name = sub_matches.get_one::<String>("bucket");
-            handlers::set_remote(bucket_name.unwrap_or(&"".to_owned())).unwrap();
+            handlers::commands::set_remote(bucket_name.unwrap_or(&"".to_owned())).unwrap();
         }
         _ => unreachable!(),
     }

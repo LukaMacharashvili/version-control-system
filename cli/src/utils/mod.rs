@@ -1,32 +1,21 @@
+pub mod constants;
 pub mod dates;
 pub mod fs_provider;
 pub mod s3_provider;
+pub mod types;
 
-use self::fs_provider::{read_part_of_file, traverse_directory};
+use self::constants::{
+    COMMIT_METADATA_RELATIVE_PATH, IGNORE_FILES_PATH, MAIN_COMMITS_METADATA_FILE_PATH,
+};
+use self::fs_provider::{get_file_paths_recursively, read_part_of_file};
+use self::types::{Commit, CommitMetadata};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::fs::{self};
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::thread;
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct CommitMetadata {
-    pub date: String,
-    pub description: String,
-    pub commit_id: String,
-    pub pointer_to_data: i32,
-    pub size: i32,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Commit {
-    pub date: String,
-    pub description: String,
-    pub commit_id: String,
-}
 
 pub fn generate_commit_id() -> String {
     rand::thread_rng()
@@ -49,8 +38,9 @@ pub fn check_if_initialized() -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
-    let file_metadata_string_result = fs::read_to_string(path.to_owned() + "/metadata.json")?;
+pub fn commits_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
+    let file_metadata_string_result =
+        fs::read_to_string(path.to_owned() + COMMIT_METADATA_RELATIVE_PATH)?;
     serde_json::from_str(&file_metadata_string_result).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -59,9 +49,8 @@ pub fn file_metadata(path: &str) -> std::io::Result<Vec<CommitMetadata>> {
     })
 }
 
-pub fn load_commits(path: &str) -> std::io::Result<Vec<Commit>> {
-    let history_path = ".history".to_owned();
-    let commits_string_result = fs::read_to_string(history_path + path)?;
+pub fn list_commits(path: &str) -> std::io::Result<Vec<Commit>> {
+    let commits_string_result = fs::read_to_string(path)?;
     serde_json::from_str::<Vec<Commit>>(&commits_string_result).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -70,27 +59,18 @@ pub fn load_commits(path: &str) -> std::io::Result<Vec<Commit>> {
     })
 }
 
-pub fn add_commit(path: &str, commit: Commit) -> std::io::Result<()> {
-    let commit_string = fs::read_to_string(path)?;
-    let mut commits = serde_json::from_str::<Vec<Commit>>(&commit_string).map_err(|e| {
+pub fn add_root_commit_metadata(commit_metadata: Commit) -> std::io::Result<()> {
+    let mut commits_metadata = list_commits(MAIN_COMMITS_METADATA_FILE_PATH)?;
+    commits_metadata.push(commit_metadata);
+
+    let commits_metadata_string = serde_json::to_string(&commits_metadata).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Failed to parse metadata: {}", e),
         )
     })?;
 
-    commits.push(commit);
-
-    File::create(path)?.write_all(
-        serde_json::to_string(&commits)
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse metadata: {}", e),
-                )
-            })?
-            .as_bytes(),
-    )?;
+    File::create(MAIN_COMMITS_METADATA_FILE_PATH)?.write_all(commits_metadata_string.as_bytes())?;
 
     Ok(())
 }
@@ -113,11 +93,11 @@ pub fn load_commit(branch_id: &str) -> std::io::Result<()> {
                     let file_name_for_history = file_name.replace("_", "/");
                     let last_committed_file_path: String = history_path.clone() + &"/" + &file_name;
 
-                    let file_metadata = file_metadata(&last_committed_file_path).unwrap();
+                    let commits_metadata = commits_metadata(&last_committed_file_path).unwrap();
                     let target_commit_metadata_result =
-                        find_metadata_by_commit_id(&file_metadata, &branch_id);
+                        find_metadata_by_commit_id(&commits_metadata, &branch_id);
                     let target_commit_metadata = match target_commit_metadata_result {
-                        None => file_metadata.last().unwrap().clone(),
+                        None => commits_metadata.last().unwrap().clone(),
                         _ => target_commit_metadata_result.unwrap(),
                     };
 
@@ -173,30 +153,29 @@ pub fn find_commit_by_commit_id(metadata: &Vec<Commit>, commit_id: &str) -> Opti
     None
 }
 
-pub fn load_ignores() -> Vec<String> {
-    let mut ignore_file = match File::open(".ignore") {
+pub fn list_files_ignore() -> Vec<String> {
+    let mut ignore_file = match File::open(IGNORE_FILES_PATH) {
         Ok(file) => file,
         Err(_) => return Vec::new(),
     };
-    let mut ignore_file_contents = String::new();
+    let mut ignore_files_string = String::new();
     ignore_file
-        .read_to_string(&mut ignore_file_contents)
+        .read_to_string(&mut ignore_files_string)
         .unwrap();
-    let ignore_file_lines: Vec<&str> = ignore_file_contents.split("\n").collect();
-    let mut ignore_file_lines_without_comments = Vec::new();
+    let ignore_file_lines: Vec<&str> = ignore_files_string.split("\n").collect();
 
-    for line in ignore_file_lines {
-        if line.starts_with("#") || line.is_empty() {
-            continue;
-        }
-        ignore_file_lines_without_comments.push(line.to_owned());
-    }
-
-    ignore_file_lines_without_comments
+    ignore_file_lines
+        .iter()
+        .filter(|x| !x.starts_with("#") && !x.is_empty())
+        .map(|x| x.to_owned().to_owned())
+        .collect()
 }
 
-pub fn write_to_metadata_file(path: &str, metadata: Vec<CommitMetadata>) -> std::io::Result<()> {
-    let mut metadata_file = File::create(path.to_owned() + "/metadata.json")?;
+pub fn write_to_commit_metadata_file(
+    path: &str,
+    metadata: Vec<CommitMetadata>,
+) -> std::io::Result<()> {
+    let mut metadata_file = File::create(path.to_owned() + COMMIT_METADATA_RELATIVE_PATH)?;
     let metadata_string = serde_json::to_string(&metadata)?;
     metadata_file.write_all(metadata_string.as_bytes())?;
     Ok(())
